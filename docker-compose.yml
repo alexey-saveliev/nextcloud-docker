@@ -1,0 +1,123 @@
+version: '3'
+services:
+  app:
+    container_name: app-server
+    image: nextcloud
+    restart: always
+    depends_on:
+      - mysql
+      - redis
+      - onlyoffice-document-server
+    environment:
+      - "TRUSTED_PROXIES=traefik"
+      - "REDIS_HOST=redis"
+      - "OVERWRITEPROTOCOL=https"
+      - "MYSQL_HOST=mysql"
+      - "MYSQL_DATABASE=nextcloud"
+      - "MYSQL_USER=nextcloud"
+      - "MYSQL_PASSWORD=<MySQL Password>"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nextcloud.rule=Host(`nextcloud.domain.com`)"
+      - "traefik.http.routers.nextcloud.tls=true"
+      - "traefik.http.routers.nextcloud.entrypoints=https"
+      - "traefik.http.routers.nextcloud.tls.certresolver=LetsEncrypt"
+      - "traefik.http.middlewares.nextcloud-headers.headers.customFrameOptionsValue=SAMEORIGIN"
+      - "traefik.http.middlewares.nextcloud-headers.headers.framedeny=true"
+      - "traefik.http.middlewares.nextcloud-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.nextcloud-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.nextcloud-headers.headers.stsSeconds=15552001"
+      - "traefik.http.routers.nextcloud.middlewares=nextcloud-headers"
+      - "traefik.docker.network=traefik"
+    expose:      
+      - '80'
+    volumes:
+      - app_data:/var/www/html
+    networks:
+      - nextcloud      
+      - traefik
+
+  onlyoffice-document-server:
+    container_name: onlyoffice-document-server
+    image: onlyoffice/documentserver:latest
+    restart: always
+    depends_on:
+      - redis
+    environment: 
+      - "REDIS_SERVER_HOST=redis"
+      - "JWT_ENABLED=true"
+      - "JWT_SECRET=<JWT Secret>"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.onlyoffice.rule=Host(`oo.nextcloud.domain.com`)
+      - traefik.http.routers.onlyoffice.tls=true
+      - traefik.http.routers.onlyoffice.entrypoints=https
+      - traefik.http.routers.onlyoffice.tls.certresolver=LetsEncrypt
+      - traefik.http.middlewares.onlyoffice-headers.headers.accesscontrolalloworigin=*"
+      - "traefik.http.middlewares.onlyoffice-headers.headers.customRequestHeaders.X-Forwarded-Proto=https"
+      - "traefik.http.middlewares.onlyoffice-headers.headers.customRequestHeaders.X-Frame-Options=SAMEORIGIN"
+      - "traefik.http.routers.onlyoffice.middlewares=onlyoffice-headers"
+      - traefik.docker.network=traefik
+    expose:
+      - '80'
+      - '443'
+    volumes:
+      - document_data:/var/www/onlyoffice/Data
+      - document_log:/var/log/onlyoffice
+    networks:
+      - nextcloud      
+      - traefik
+  
+  redis:
+    container_name: redis
+    image: redis:alpine
+    restart: always
+    expose:
+      - '6379'
+    networks:
+      - nextcloud      
+  mysql:
+    container_name: mysql
+    image: mariadb:latest
+    command: --transaction-isolation=READ-COMMITTED --binlog-format=ROW
+    restart: always
+    environment:
+      - MYSQL_RANDOM_ROOT_PASSWORD=yes
+      - MYSQL_DATABASE=nextcloud
+      - MYSQL_USER=nextcloud
+      - MYSQL_PASSWORD=<MySQL Password>
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - nextcloud
+    
+volumes:
+  document_data:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /home/docker/nextcloud/volumes/document_data
+  document_log:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /home/docker/nextcloud/volumes/document_log    
+  app_data:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /home/docker/nextcloud/volumes/app_data
+  mysql_data:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: /home/docker/nextcloud/volumes/mysql_data
+
+networks:
+  nextcloud:
+  traefik:
+    external: true
